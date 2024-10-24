@@ -1,0 +1,244 @@
+# Cargar librerías necesarias
+library(shiny)
+library(leaflet)
+library(sf)
+library(dplyr)
+library(RColorBrewer)
+library(DT)
+library(plotly)
+library(markdown)
+
+# Función para generar la curva normal con las zonas de confianza y rechazo usando plotly
+plot_normal_distribution <- function(confianza, e) {
+  alpha <- 1 - (confianza / 100)
+  z_alpha <- qnorm(1 - alpha / 2)
+  
+  # Calcular el error estándar (SE) en función del margen de error y Z
+  SE <- e / z_alpha
+  
+  # Generar valores de x basados en SE
+  x <- seq(-4 * SE, 4 * SE, length = 1000)
+  y <- dnorm(x, mean = 0, sd = SE)
+  
+  df <- data.frame(x, y)
+  
+  # Definir los límites del intervalo de confianza
+  lower_limit <- -e
+  upper_limit <- e
+  
+  plot <- plot_ly(df, x = ~x, y = ~y, type = 'scatter', mode = 'lines', line = list(color = 'blue')) %>%
+    add_ribbons(x = ~x, ymin = 0, ymax = ~y, 
+                data = subset(df, x >= lower_limit & x <= upper_limit), 
+                fillcolor = 'rgba(0, 255, 0, 0.3)', name = "Intervalo de Confianza") %>%
+    add_ribbons(x = ~x, ymin = 0, ymax = ~y, 
+                data = subset(df, x < lower_limit | x > upper_limit), 
+                fillcolor = 'rgba(255, 0, 0, 0.3)', name = "Zonas de Rechazo") %>%
+    layout(title = paste("Distribución Normal con Nivel de Confianza:", confianza, "% y Margen de Error:", e * 100, "%"),
+           xaxis = list(title = "Valor"),
+           yaxis = list(title = "Densidad"),
+           showlegend = FALSE)
+  
+  return(plot)
+}
+
+# Estilos personalizados
+estilos <- "
+  body {background-color: #e0f7fa;}
+  .panel-body {background-color: #e3f2fd; border-radius: 10px; padding: 20px; width: 100%;}  
+  .panel-footer {background-color: #bbdefb; padding: 10px;}
+  #header {background-color: #0d47a1; color: white; padding: 10px; text-align: center; border-radius: 10px;}
+  #footer {background-color: #1565c0; color: white; padding: 10px; text-align: center; border-radius: 10px;}
+  h3 {color: #0d47a1;}
+  .formulas {background-color: #bbdefb; padding: 20px; border-radius: 10px; margin-top: 20px;}
+"
+
+# Interfaz de Usuario
+ui <- fluidPage(
+  tags$head(tags$style(HTML(estilos))),
+  
+  # Header con advertencia
+  div(id = "header", 
+      h1("Calculadora de Tamaño Muestral y Estimación de Costos"),
+      h5("Advertencia: Este es un ejemplo diseñado únicamente para ilustrar el cálculo de muestras totalmente aleatorias. Asegúrese de que sus datos cumplan con los supuestos necesarios antes de utilizar este método en la práctica."),
+      h5("Este ejemplo es válido solo para unidades de viviendas en Asunción")
+  ),
+  
+  # Añadir tabsetPanel para las pestañas
+  tabsetPanel(
+    tabPanel("Calculadora",
+             fluidRow(
+               column(
+                 width = 6,
+                 div(class = "panel-body",
+                     h3("Parámetros de Entrada"),
+                     sliderInput("poblacion", "Tamaño de la Población:", min = 1000, max = 200000, value = 100000, step = 1000, width = '100%'),  
+                     sliderInput("confianza", "Nivel de Confianza (%):", min = 50, max = 99.9, value = 95, step = 0.1, width = '100%'),  
+                     sliderInput("error", "Margen de Error (%):", min = 0.1, max = 20, value = 5, step = 0.1, width = '100%'),  
+                     sliderInput("no_respuesta", "Nivel de No Respuesta (%):", min = 0, max = 50, value = 10, step = 1, width = '100%'),  
+                     numericInput("costo", "Costo por Encuesta (en Gs):", value = 50000, min = 1000, width = '100%'),
+                     actionButton("recalcular", "Recalcular")  # Botón para recalcular
+                 ),
+                 
+                 div(class = "panel-body",
+                     h3("Distribución Normal"),
+                     plotlyOutput("normal_plot")  # Gráfico de la distribución normal con plotly
+                 )
+               ),
+               
+               column(
+                 width = 6,
+                 div(class = "panel-body",
+                     h3("Resultados del Cálculo"),
+                     verbatimTextOutput("resultado"),
+                     verbatimTextOutput("costo_total")
+                 ),
+                 
+                 leafletOutput("mapa", height = 600),
+                 
+                 div(class = "panel-body",
+                     h3("Tabla de Puntos Muestrales Seleccionados"),
+                     DTOutput("tabla_puntos")  
+                 )
+               )
+             ),
+             
+             # Tabla con las fórmulas
+             fluidRow(
+               column(
+                 width = 12,
+                 div(class = "panel-body formulas",
+                     h3("Fórmulas Utilizadas"),
+                     p("Tamaño de muestra inicial (sin ajuste): n0 = (Z^2 * p * (1 - p)) / e^2"),
+                     p("Tamaño de muestra ajustado para poblaciones finitas: n = n0 / (1 + ((n0 - 1) / N))"),
+                     p("Tamaño de muestra final ajustado por no respuesta: n_final = n / (1 - NR)"),
+                     p("NR: Nivel de no respuesta, Z: Valor crítico para el nivel de confianza, e: Margen de error, p: Proporción esperada, N: Tamaño de la población")
+                 )
+               )
+             )
+    ),
+    tabPanel("Artículo",
+             fluidRow(
+               column(
+                 width = 12,
+                 div(class = "panel-body",
+                     h3("Artículo"),
+                     includeMarkdown("muestreoasu/articulo.md")  # Asegúrate de que el artículo esté en la misma carpeta
+                 )
+               )
+             )
+    )
+  ),
+  
+  # Footer con datos del autor y fuente
+  div(id = "footer", 
+      p("Diego Bernardo Meza - dmeza.py@gmail.com - 0971 100835"),
+      p("Fuente: Geoportal del INE")
+  )
+)
+
+# Lógica del Servidor
+server <- function(input, output, session) {
+  
+  # Cálculos reactivos
+  n_ajustado <- reactiveVal()
+  
+  observeEvent(input$recalcular, {
+    N <- input$poblacion
+    Z <- qnorm(1 - (1 - (input$confianza / 100)) / 2)
+    p <- 0.5  
+    e <- input$error / 100
+    no_respuesta <- 1 - (input$no_respuesta / 100)  
+    
+    n0 <- (Z^2 * p * (1 - p)) / (e^2)
+    n <- n0 / (1 + ((n0 - 1) / N))
+    n <- ceiling(n)  
+    
+    n_ajustado(ceiling(n / no_respuesta))
+  })
+  
+  costo_total <- reactive({
+    n_ajustado() * input$costo
+  })
+  
+  # Actualizar el gráfico de la distribución normal
+  output$normal_plot <- renderPlotly({
+    req(n_ajustado())  # Asegúrate de que n_ajustado tenga un valor
+    e <- input$error / 100
+    plot_normal_distribution(input$confianza, e)
+  })
+  
+  # Mostrar resultados del cálculo
+  output$resultado <- renderText({
+    req(n_ajustado())
+    paste("El tamaño de muestra ajustado por no respuesta es:", n_ajustado(), "individuos.")
+  })
+  
+  output$costo_total <- renderText({
+    req(costo_total())
+    paste("El costo total estimado es:", format(costo_total(), big.mark = ",", decimal.mark = ".", scientific = FALSE), "Gs")
+  })
+  
+  # Datos reactivos para puntos muestrales y barrios
+  datos_muestra <- reactive({
+    region <- st_read("muestreoasu/VIVIENDAS_000.shp")  # Usa rutas relativas
+    barrios <- st_read("muestreoasu/Barrios_Localidades_Asuncion.shp")  # Usa rutas relativas
+    
+    # Verificar y definir CRS
+    if (is.na(st_crs(region))) {
+      st_crs(region) <- 32721  
+    }
+    if (is.na(st_crs(barrios))) {
+      st_crs(barrios) <- 32721  
+    }
+    
+    region <- st_transform(region, crs = 4326)
+    barrios <- st_transform(barrios, crs = 4326)
+    
+    puntos_muestrales <- region %>%
+      sample_n(n_ajustado())
+    
+    barrios_muestra <- unique(puntos_muestrales$BARLO_DESC)
+    
+    barrios_seleccionados <- barrios %>%
+      filter(BARLO_DESC %in% barrios_muestra)
+    
+    puntos_data <- data.frame(
+      ID = 1:nrow(puntos_muestrales),
+      Barrio = puntos_muestrales$BARLO_DESC,
+      lon = st_coordinates(puntos_muestrales)[, 1],
+      lat = st_coordinates(puntos_muestrales)[, 2]
+    )
+    
+    colores_barrios <- colorFactor(palette = brewer.pal(length(unique(puntos_data$Barrio)), "Dark2"), domain = puntos_data$Barrio)
+    
+    list(puntos_data = puntos_data, barrios_seleccionados = barrios_seleccionados, colores_barrios = colores_barrios)
+  })
+  
+  # Mostrar tabla de puntos muestrales
+  output$tabla_puntos <- renderDT({
+    req(datos_muestra()$puntos_data)  # Asegúrate de que los datos estén disponibles
+    datatable(datos_muestra()$puntos_data, options = list(pageLength = 10, autoWidth = TRUE), rownames = FALSE)
+  })
+  
+  # Mostrar mapa
+  output$mapa <- renderLeaflet({
+    req(datos_muestra())  # Asegúrate de que los datos estén disponibles
+    datos <- datos_muestra()
+    puntos_data <- datos$puntos_data
+    barrios_seleccionados <- datos$barrios_seleccionados
+    colores_barrios <- datos$colores_barrios
+    
+    leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = mean(puntos_data$lon), lat = mean(puntos_data$lat), zoom = 13) %>%
+      addPolygons(data = barrios_seleccionados, color = "green", weight = 2, fillOpacity = 0.5, popup = ~BARLO_DESC) %>%
+      addCircleMarkers(data = puntos_data, lng = ~lon, lat = ~lat,
+                       radius = 8, fillColor = ~colores_barrios(Barrio), fillOpacity = 1, stroke = FALSE, popup = ~Barrio)
+  })
+}
+
+# Ejecutar la aplicación Shiny
+shinyApp(ui = ui, server = server)
+
+
+
