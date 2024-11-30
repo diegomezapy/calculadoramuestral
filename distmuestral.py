@@ -1,141 +1,143 @@
-# Paso 1: Instalar las dependencias
-#!pip install streamlit
-#!pip install pyngrok
-
-# Paso 2: Escribir el código de la aplicación en app.py
-#%%writefile app.py
-import streamlit as st
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import plotly.graph_objs as go
+import ipywidgets as widgets
+from IPython.display import display, clear_output
 
-# Título de la Aplicación
-st.title("Simulación de Distribución Muestral de Medias")
+# Definir las distribuciones disponibles
+distribuciones = {
+    'Normal': lambda size: np.random.normal(loc=0, scale=1, size=size),
+    'Uniforme': lambda size: np.random.uniform(low=0, high=1, size=size),
+    'Exponencial': lambda size: np.random.exponential(scale=1, size=size),
+    'Binomial': lambda size: np.random.binomial(n=10, p=0.5, size=size),
+    'Poisson': lambda size: np.random.poisson(lam=3, size=size)
+}
 
-# Sección de Configuración
-st.sidebar.header("Configuración de la Simulación")
-
-# Selección de la Distribución Poblacional
-distribucion = st.sidebar.selectbox(
-    "Distribución Poblacional:",
-    ("Normal", "Uniforme", "Exponencial", "Binomial", "Poisson")
+# Crear widgets
+distribucion_widget = widgets.Dropdown(
+    options=list(distribuciones.keys()),
+    value='Normal',
+    description='Distribución:',
+    disabled=False,
 )
 
-# Tamaño de la Muestra (n)
-tamaño_muestra = st.sidebar.number_input(
-    "Tamaño de la Muestra (n):",
-    min_value=1,
+tamaño_muestra_widget = widgets.IntSlider(
     value=30,
-    step=1
+    min=1,
+    max=1000,
+    step=1,
+    description='Tamaño n:',
+    continuous_update=False,
+    orientation='horizontal',
+    readout=True,
+    readout_format='d'
 )
 
-# Número de Muestras
-numero_muestras = st.sidebar.number_input(
-    "Número de Muestras:",
-    min_value=1,
+numero_muestras_widget = widgets.IntSlider(
     value=50,
-    step=1
+    min=1,
+    max=1000,
+    step=1,
+    description='Número de muestras:',
+    continuous_update=False,
+    orientation='horizontal',
+    readout=True,
+    readout_format='d'
 )
 
-# Botón para Iniciar la Simulación
-if st.sidebar.button("Iniciar Simulación"):
-    # Generar Datos Poblacionales
-    if distribucion == "Normal":
-        datos_poblacion = np.random.normal(loc=0, scale=1, size=10000)
-        sigma_poblacional = 1
-    elif distribucion == "Uniforme":
-        datos_poblacion = np.random.uniform(low=0, high=1, size=10000)
-        sigma_poblacional = np.std(datos_poblacion)
-    elif distribucion == "Exponencial":
-        datos_poblacion = np.random.exponential(scale=1, size=10000)
-        sigma_poblacional = np.std(datos_poblacion)
-    elif distribucion == "Binomial":
-        datos_poblacion = np.random.binomial(n=10, p=0.5, size=10000)
-        sigma_poblacional = np.std(datos_poblacion)
-    elif distribucion == "Poisson":
-        datos_poblacion = np.random.poisson(lam=3, size=10000)
-        sigma_poblacional = np.std(datos_poblacion)
-    else:
-        st.error("Distribución no soportada.")
-        st.stop()
+boton_simular = widgets.Button(
+    description='Iniciar Simulación',
+    button_style='success',
+    tooltip='Haz clic para iniciar la simulación',
+    icon='play'
+)
 
-    # Función para Generar Muestras y Calcular Promedios
-    def generar_muestras(datos, n, m):
-        medias = []
-        for _ in range(m):
-            muestra = np.random.choice(datos, size=n, replace=True)
-            media = np.mean(muestra)
-            medias.append(media)
-        return medias
+boton_reiniciar = widgets.Button(
+    description='Reiniciar',
+    button_style='warning',
+    tooltip='Haz clic para reiniciar la simulación',
+    icon='refresh'
+)
 
-    # Generar las Medias Muestrales
-    medias_muestrales = generar_muestras(datos_poblacion, tamaño_muestra, numero_muestras)
+# Crear contenedores para los resultados
+resultado_widget = widgets.Output()
 
-    # Cálculos de Resultados
-    desviacion_medias = np.std(medias_muestrales, ddof=1)
-    error_estandar = sigma_poblacional / np.sqrt(tamaño_muestra)
+# Definir la función de simulación
+def simular(b):
+    with resultado_widget:
+        clear_output(wait=True)
+        distribucion = distribucion_widget.value
+        n = tamaño_muestra_widget.value
+        m = numero_muestras_widget.value
+        
+        # Generar datos poblacionales
+        datos_poblacion = distribuciones
+        sigma_poblacional = np.std(datos_poblacion, ddof=1)
+        
+        # Generar muestras y calcular medias
+        medias_muestrales = np.random.choice(datos_poblacion, size=(m, n), replace=True).mean(axis=1)
+        desviacion_medias = np.std(medias_muestrales, ddof=1)
+        error_estandar = sigma_poblacional / np.sqrt(n)
+        
+        # Mostrar métricas
+        col1, col2, col3 = widgets.HBox([
+            widgets.VBox([widgets.Label("Número de Muestras"), widgets.Label(str(m))]),
+            widgets.VBox([widgets.Label("Desviación de las Medias"), widgets.Label(f"{desviacion_medias:.2f}")]),
+            widgets.VBox([widgets.Label("Desviación Poblacional"), widgets.Label(f"{sigma_poblacional:.2f}")])
+        ])
+        display(col1, col2, col3)
+        display(widgets.Label(f"Cociente σ/√n: {error_estandar:.2f}"))
+        
+        # Crear gráficos
+        fig_poblacion = go.Figure()
+        fig_poblacion.add_trace(go.Histogram(x=datos_poblacion, nbinsx=30, marker_color='skyblue'))
+        fig_poblacion.update_layout(
+            title=f"Distribución Poblacional ({distribucion})",
+            xaxis_title="Valores",
+            yaxis_title="Frecuencia",
+            bargap=0.1
+        )
+        
+        fig_medias = go.Figure()
+        fig_medias.add_trace(go.Histogram(x=medias_muestrales, nbinsx=30, marker_color='salmon'))
+        fig_medias.update_layout(
+            title="Distribución de las Medias Muestrales",
+            xaxis_title="Media de la Muestra",
+            yaxis_title="Frecuencia",
+            bargap=0.1
+        )
+        
+        display(fig_poblacion)
+        display(fig_medias)
+        
+        # Crear tabla de resultados
+        df_resultados = pd.DataFrame({
+            "N° Muestra": np.arange(1, m + 1),
+            "Promedio de la Muestra": medias_muestrales
+        })
+        st_table = df_resultados.style.format({"Promedio de la Muestra": "{:.2f}"})
+        display(st_table)
 
-    # Mostrar Resultados
-    st.subheader("Resultados de la Simulación")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Número de Muestras", numero_muestras)
-    col2.metric("Desviación de las Medias", f"{desviacion_medias:.2f}")
-    col3.metric("Desviación Poblacional", f"{sigma_poblacional:.2f}")
-    st.metric("Cociente σ/√n", f"{error_estandar:.2f}")
+# Definir la función de reinicio
+def reiniciar(b):
+    with resultado_widget:
+        clear_output(wait=True)
+        tamaño_muestra_widget.value = 30
+        numero_muestras_widget.value = 50
+        distribucion_widget.value = 'Normal'
 
-    # Gráficos
-    st.subheader("Visualización de Resultados")
+# Asignar las funciones a los botones
+boton_simular.on_click(simular)
+boton_reiniciar.on_click(reiniciar)
 
-    # Gráfico de la Distribución Poblacional
-    fig1, ax1 = plt.subplots()
-    ax1.hist(datos_poblacion, bins=30, color='skyblue', edgecolor='black')
-    ax1.set_title(f"Distribución Poblacional ({distribucion})")
-    ax1.set_xlabel("Valores")
-    ax1.set_ylabel("Frecuencia")
-    st.pyplot(fig1)
+# Organizar los widgets en el notebook
+configuracion = widgets.VBox([
+    distribucion_widget,
+    tamaño_muestra_widget,
+    numero_muestras_widget,
+    widgets.HBox([boton_simular, boton_reiniciar])
+])
 
-    # Gráfico de la Distribución de las Medias Muestrales
-    fig2, ax2 = plt.subplots()
-    ax2.hist(medias_muestrales, bins=30, color='salmon', edgecolor='black')
-    ax2.set_title("Distribución de las Medias Muestrales")
-    ax2.set_xlabel("Media de la Muestra")
-    ax2.set_ylabel("Frecuencia")
-    st.pyplot(fig2)
-
-    # Tabla de Resultados
-    st.subheader("Tabla de Medias Muestrales")
-    df = pd.DataFrame({
-        "N° Muestra": np.arange(1, numero_muestras + 1),
-        "Promedio de la Muestra": medias_muestrales
-    })
-    st.dataframe(df.style.format({"Promedio de la Muestra": "{:.2f}"}))
-
-# Paso 3: Importar pyngrok y configurar
-from pyngrok import ngrok
-import os
-import time
-import threading
-import sys
-
-# Configurar el puerto para Streamlit
-port = 8501
-
-# Iniciar el túnel de ngrok
-public_url = ngrok.connect(port)
-print(f"La aplicación está disponible en: {public_url}")
-
-# Función para ejecutar Streamlit
-def run_streamlit():
-    # Ejecutar Streamlit y redirigir la salida para evitar que se muestre en Colab
-    os.system(f"streamlit run app.py --server.port {port} --server.enableCORS false")
-
-# Ejecutar Streamlit en un hilo separado
-threading.Thread(target=run_streamlit).start()
-
-# Mantener la ejecución del notebook abierta mientras la aplicación está en funcionamiento
-while True:
-    try:
-        time.sleep(1)
-    except KeyboardInterrupt:
-        print("Interrumpido por el usuario")
-        break
+# Mostrar los widgets y el contenedor de resultados
+st_header = widgets.HTML("<h2>Configuración de la Simulación</h2>")
+display(st_header, configuracion, resultado_widget)
