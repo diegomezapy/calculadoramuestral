@@ -3,7 +3,7 @@
 #!pip install pyngrok
 
 # Paso 2: Escribir el código de la aplicación en app.py
-%%writefile app.py
+#%%writefile app.py
 import streamlit as st
 import numpy as np
 import pandas as pd
