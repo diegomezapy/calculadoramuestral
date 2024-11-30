@@ -1,6 +1,6 @@
 # Paso 1: Instalar las dependencias
-!pip install streamlit
-!pip install pyngrok
+#!pip install streamlit
+#!pip install pyngrok
 
 # Paso 2: Escribir el código de la aplicación en app.py
 %%writefile app.py
